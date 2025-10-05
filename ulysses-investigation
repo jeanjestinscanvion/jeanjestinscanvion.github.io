@@ -1,0 +1,138 @@
+# Incident Report — Write-up cyberdefenders Ulysses lab (https://cyberdefenders.org/blueteam-ctf-challenges/ulysses/)
+Date / Heure : 05/10/2025 12:35
+Auteur : Jean Jestin-Scanvion
+Contexte : Une attaque par brute force a été détectée, des connexions sortantes non autorisées ont été établies.
+Environnement impacté :
+- Serveur : debian 5.0
+- Utilisateurs : ulysses
+- Services : exim4
+Nom du fichier à analyser : 41-Ulysses.zip
+Hash du fichier à analyser :
+- MD5 : 5da7d467583cffbb4a039cf69f24c926
+- SHA1 : 56d4ac10141fe836241c901b1f235ea2f830bd04
+- SHA256 : 57cadafc10d040b74ad922c65fa71b70d6269123982b4862847cdaa8892d3745
+- SHA512 : 450abd67be6d888c498ca9611781ca5e1ddf48279aa74fa83a0c3f6c4a103174ea113f805e505aca1a218c20418d0132c1d9e756b38eef1e077efd6adef309bf
+Outils utilisés : volatitlity2, mount
+
+## Préparation de l'analyse
+sudo mkdir /mnt/Linux
+sudo mount victoria-v8.sda1.img /mnt/Linux
+
+
+## Synthèse :
+- Une attaque de type brute force a été identifiée sur le serveur victoria (192.168.1.102).
+- L'attaquant a tenté de se connecter en SSH avec l'utilisateur ulysses qui n'existe pas sur le serveur.
+- L'attaque par brute force n'ayant pas aboutie, l'attaquant a identifié une vulnérabilité sur le service exim4.
+- L'exploitation a permis à l'attaquant d'obtenir un accès au serveur en tant qu'uilisateur exim via un reverse-shell.
+
+
+## Scope & Impact
+- Hôtes compromis : serveur victoria (192.168.1.102), serveur 192.168.1.1, 192.168.1.101
+- Utilisateurs concernés : exim
+- Données potentiellement exfiltrées : toutes les données du disque ont été exfiltrées
+
+
+## Timeline (chronologique)
+06/02/2011 14:04 - Utilisation du port 4444 pour exfiltrer de la donnée - /var/log/rejectlog
+06/02/2011 14:24 - Utilisation du port 8888 pour exfiltrer de la donnée - /var/log/rejectlog
+06/02/2011 15:07 - Exploitation du service exim4 - /var/log/rejectlog
+06/02/2011 15:16 - Début du brute force - /var/log/auth.log
+06/02/2011 15:16 - Téléchargement du fichier rk.tar - /var/log/auth.log
+06/02/2011 15:20 - Téléchargement du fichier c.pl - /var/log/auth.log
+06/02/2011 15:21 - Fin du brute force - /var/log/auth.log
+
+
+## Artefacts collectés (IOCs)
+- Hashes c.pl :
+    - MD5 : 3d0e76a060660b7ab47b2cabe7153e86
+    - SHA1 : e602811f016d68bc5c228099e680e24f487cd6d7
+    - SHA256 : 1648df3f1e0c032b757b6d68e1d34105e500bcab5986227ff917ec7d22a97e01
+    - SHA512 : e48981e482b93d83142d7813b022334615ad7645af3ead2c1f0d62ff263260767d8b84f07f9718e09be5abe528588dd74d99fb636805a20a745db4784e32fd47
+- Hashes rk.tar :
+    - MD5 : d0e098de3b0e436f934763810cd31189
+    - SHA1 : bfffbf902444323e0ecc7ef0c21b62cdd4e26784
+    - SHA256 : 6a324fcebd39bee3df601a2c0bae779d4238f227c025bef29ca33382ddbcd665
+    - SHA1512: 983d5bd75bc2cffc9afad7ae36eafb38a45f06e51c4a483a785ce0b8f1ab2359040bd1017de1cef9dea29598208610882bd00733d315f9223e41937f9c9d8c60
+- IPs : 192.168.56.1, 192.168.56.101
+- Domains/URLs : N/A
+- Registry keys / Scheduled tasks : N/A
+
+
+## MITRE ATT&CK mapping
+- Credential access : Brute force (T1110) - /var/log/auth.log
+
+
+- Exfiltration : Exfiltration Over Alternative Protocol (T1048) - volatility linux_bash module
+06/02/2011 15:07 - Exploitation du service exim4 - /var/log/rejectlog
+06/02/2011 15:16 - Téléchargement du fichier rk.tar - /var/log/auth.log
+06/02/2011 15:20 - Téléchargement du fichier c.pl - /var/log/auth.log
+
+
+## Analyse technique détaillée
+- Initial access : preuves, mécanismes
+- Execution & persistence : commandes, services, run keys
+- Lateral movement : méthode, comptes utilisés
+- Exfiltration / C2 : réseau, pcap evidence
+
+
+## Containment & Remediation
+- Actions immédiates prises : (isolation, blocage IP, reset password)
+    - Isolation des serveurs 192.168.1.101, 192.168.1.102
+    - Analyse du serveur 192.168.1.101
+    - Recherche de potentielles pistes d'exploitation sur le serveur compromis
+- Actions recommandées : (patch, disable service, revocation tokens)
+    - Mise à jour du service exim4
+
+
+## Détections proposées
+On peut identifier 2 signes distinctifs concernant l'exploitation de exim4 :
+- Dans les logs on retrouve 'rejected from <...>: message too big' car les en-têtes son très longues
+- Dans les logs on retrouve '${run{...}', c'est de l'exécution de commandes avec exim
+
+- Sigma rule : CVE-2010-4344
+title: Exim string_format heap overflow exploit attempt (Exim <= 4.69)
+id: N/A
+status: experimental
+description: Detect exploitation of exim4 exploitation - CVE-2010-4344.
+author: ton.nom@example.com
+date: 2025/10/05
+references:
+  - https://www.exploit-db.com/exploits/16925
+  - https://nvd.nist.gov/vuln/detail/CVE-2010-4344
+logsource:
+  product: linux
+  service: syslog
+  category: mail
+detection:
+  selection_rejected:
+    Message|contains:
+      - "message too big"
+      - "rejected from"
+  selection_rexecution:
+    Message|contains:
+      - "\$\{run\{"
+  condition: selection_rejected and selection_execution
+fields:
+  - Message
+  - host
+  - user
+level: high
+tags:
+  - attack.execution
+  - exploit.exim
+  - cve-2010-4344
+
+
+- Traduction Splunk/KQL (snippet)
+index=linux (Message="*message too big*" OR Message="*rejected from*") | table Message,host,user
+
+## Annexes
+- Commandes utiles et outputs
+- Screenshots / pcap extracts
+- Liste des fichiers collectés
+
+
+
+This module exploits a heap buffer overflow within versions of Exim prior to
+				version 4.69. By sending a specially crafted message, an attacker can corrupt the
+				heap and execute arbitrary code with the privileges of the Exim daemon.
